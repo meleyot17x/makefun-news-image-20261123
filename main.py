@@ -1,64 +1,61 @@
 #!/usr/bin/env python3
-"""THE DAY'S POST — entry runner for news-image-20261123 (final3, G4).
+"""Runner for THE DAY'S POST — final3's G4 page for news-image-20261123.
 
-The artwork itself is entry.png, drawn by compose.py in this same session:
-a sepia broadsheet front page with teal ink and brick-red accents that sums
-up Monday 23 November 2026 in 41 stories, led by the US Army plan to
-detonate unstable explosives in Iowa.
+One image tells the whole of Monday 23 November 2026: THE DAY'S POST, a
+sepia-and-teal broadsheet with brick-red accents, 41 stories in 12 numbered
+cards plus 29 briefs, led by the US Army's plan to detonate tons of unstable
+explosives in Iowa. compose.py drew it; this file ships it.
 
-This runner is deliberately boring: standard library only, no image
-libraries, no transformation. It reads the PNG sitting next to it, checks
-the magic header, the 1 MiB competition cap and the exact byte count and
-SHA-256 recorded when the page was rendered, then copies the bytes —
-unchanged — into the output directory (MAKEFUN_OUTPUT_DIR or /output).
-Two runs therefore always produce byte-identical output.
+Shipping means copying, nothing more. Only hashlib, os and sys are used.
+The runner opens entry.png beside itself, refuses anything that is not a
+PNG, anything over the 1 MiB competition ceiling, and anything whose byte
+count or SHA-256 differs from the values sealed at render time. It then
+writes those exact bytes to MAKEFUN_OUTPUT_DIR (falling back to /output),
+so repeated runs can never drift apart.
 
-Revision note (same session): the size and hash guards were tightened to
-fail on any drift at all, so a swapped or truncated entry.png can never
-slip through as a silent pass.
+Tail rewrite note: this entries-repo copy was re-authored from the staging
+runner in the same session, keeping the sealed byte count and digest of
+THE DAY'S POST page (103842 bytes) as the single source of truth.
 """
 
 import hashlib
 import os
 import sys
 
-EXPECTED_BYTES = 103842
-EXPECTED_SHA256 = "1248d428ecb0a1ccfb97982d0a57d9ac961a60ca59c5feba6928086fbfba9275"
+SEALED_BYTES = 103842
+SEALED_SHA256 = "1248d428ecb0a1ccfb97982d0a57d9ac961a60ca59c5feba6928086fbfba9275"
 
-PNG_HEADER = b"\x89PNG\r\n\x1a\n"
-HARD_CAP = 1048576  # the competition refuses anything above 1 MiB
+SIGNATURE = b"\x89PNG\r\n\x1a\n"
+CEILING = 1048576
 
 
-def run():
-    folder = os.path.dirname(os.path.abspath(__file__))
-    source = os.path.join(folder, "entry.png")
-    target_dir = os.environ.get("MAKEFUN_OUTPUT_DIR") or "/output"
-    target = os.path.join(target_dir, "entry.png")
+def ship():
+    here = os.path.dirname(os.path.abspath(__file__))
+    src_path = os.path.join(here, "entry.png")
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR") or "/output"
+    dst_path = os.path.join(out_dir, "entry.png")
 
-    with open(source, "rb") as handle:
-        payload = handle.read()
+    with open(src_path, "rb") as fh:
+        blob = fh.read()
 
-    if not payload:
-        sys.exit("entry.png is empty")
-    if payload[:8] != PNG_HEADER:
-        sys.exit("entry.png does not start with the PNG magic bytes")
-    if len(payload) > HARD_CAP:
-        sys.exit("entry.png is over the 1 MiB cap: %d bytes" % len(payload))
-    if len(payload) != EXPECTED_BYTES:
-        sys.exit(
-            "entry.png size drifted: got %d bytes, expected %d"
-            % (len(payload), EXPECTED_BYTES)
-        )
-    digest = hashlib.sha256(payload).hexdigest()
-    if digest != EXPECTED_SHA256:
-        sys.exit("entry.png sha256 drifted: got %s" % digest)
+    if len(blob) == 0:
+        sys.exit("entry.png is empty — nothing to ship")
+    if blob[:8] != SIGNATURE:
+        sys.exit("entry.png fails the PNG signature check")
+    if len(blob) > CEILING:
+        sys.exit("entry.png exceeds 1 MiB: %d bytes" % len(blob))
+    if len(blob) != SEALED_BYTES:
+        sys.exit("entry.png size mismatch: %d != %d" % (len(blob), SEALED_BYTES))
+    if hashlib.sha256(blob).hexdigest() != SEALED_SHA256:
+        sys.exit("entry.png sha256 mismatch against the sealed digest")
 
-    os.makedirs(target_dir, exist_ok=True)
-    with open(target, "wb") as handle:
-        handle.write(payload)
-
-    sys.stderr.write("entry.png copied: %d bytes sha256=%s\n" % (len(payload), digest))
+    os.makedirs(out_dir, exist_ok=True)
+    with open(dst_path, "wb") as fh:
+        fh.write(blob)
+    sys.stderr.write(
+        "shipped entry.png: %d bytes sha256=%s\n" % (len(blob), SEALED_SHA256)
+    )
 
 
 if __name__ == "__main__":
-    run()
+    ship()
